@@ -36,7 +36,9 @@ import sunrgbd_utils
 from model_util_sunrgbd import SunrgbdDatasetConfig
 
 DC = SunrgbdDatasetConfig()  # dataset specific config
-MAX_NUM_OBJ = 64  # maximum number of objects allowed per scene
+# maximum number of objects allowed per scene, (IMO it shouldn't be greater than the number of bak
+# bone output features/dims)
+MAX_NUM_OBJ = 256
 MEAN_COLOR_RGB = np.array([0.5, 0.5, 0.5])  # sunrgbd color is in 0~1
 
 
@@ -45,7 +47,7 @@ class SunrgbdDetectionVotesDataset(Dataset):
                  use_color=False, use_height=False, use_v1=False,
                  augment=False, data_root=None):
 
-        assert (num_points <= 50000)
+        assert (num_points <= 100000)
         self.use_v1 = use_v1
 
         self.num_points = num_points
@@ -91,10 +93,12 @@ class SunrgbdDetectionVotesDataset(Dataset):
             size_residual_label: (MAX_NUM_OBJ,3)
             box_label_mask: (MAX_NUM_OBJ) as 0/1 with 1 indicating a unique box
             point_obj_mask: (N,) with 0/1 with 1 indicating the point is in one of the object's OBB.
-            point_instance_label: (N,) with int values in -1,...,num_box, indicating which object the point belongs to, -1 means a backgound point.
+            point_instance_label: (N,) with int values in -1,...,num_box, indicating which object the point belongs to,
+             -1 means a backgound point.
             scan_idx: int scan index in scan_names list
             max_gt_bboxes: unused
         """
+
         point_cloud = self.point_cloud_list[idx]  # Nx6
         bboxes = self.bboxes_list[idx]  # K,8
         point_obj_mask = self.point_labels_list[idx][:, 0]
@@ -167,7 +171,7 @@ class SunrgbdDetectionVotesDataset(Dataset):
             angle_class, angle_residual = DC.angle2class(bbox[6])
             # NOTE: The mean size stored in size2class is of full length of box edges,
             # while in sunrgbd_data.py data dumping we dumped *half* length l,w,h.. so have to time it by 2 here
-            box3d_size = bbox[3:6] * 2
+            box3d_size = bbox[3:6]
             size_class, size_residual = DC.size2class(box3d_size, DC.class2type[semantic_class])
             box3d_centers[i, :] = box3d_center
             angle_classes[i] = angle_class

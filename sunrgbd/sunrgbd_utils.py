@@ -233,11 +233,11 @@ def extract_pc_in_box3d(pc, box3d):
 
 
 def my_compute_box_3d(center, size, heading_angle):
-    R = rotz(-1 * heading_angle)
+    R = rotz(heading_angle)
     l, w, h = size
-    x_corners = [-l, l, l, -l, -l, l, l, -l]
-    y_corners = [w, w, -w, -w, w, w, -w, -w]
-    z_corners = [h, h, h, h, -h, -h, -h, -h]
+    x_corners = [-l/2, l/2, l/2, -l/2, -l/2, l/2, l/2, -l/2]
+    y_corners = [w/2, w/2, -w/2, -w/2, w/2, w/2, -w/2, -w/2]
+    z_corners = [h/2, h/2, h/2, h/2, -h/2, -h/2, -h/2, -h/2]
     corners_3d = np.dot(R, np.vstack([x_corners, y_corners, z_corners]))
     corners_3d[0, :] += center[0]
     corners_3d[1, :] += center[1]

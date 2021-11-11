@@ -325,8 +325,8 @@ def get_loss(end_points, config, num_decoder_layers,
 
     # means average proposal with prediction loss
     loss = query_points_generator_loss_coef * query_points_generation_loss + \
-           1.0 / (num_decoder_layers + 1) * (
-                   obj_loss_coef * objectness_loss_sum + box_loss_coef * box_loss_sum + sem_cls_loss_coef * sem_cls_loss_sum)
+           (1.0 / (num_decoder_layers + 1)) * (obj_loss_coef * objectness_loss_sum + box_loss_coef * box_loss_sum +
+                                               sem_cls_loss_coef * sem_cls_loss_sum)
     loss *= 10
 
     end_points['loss'] = loss

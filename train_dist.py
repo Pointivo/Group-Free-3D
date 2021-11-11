@@ -4,12 +4,14 @@ import time
 import numpy as np
 import json
 import argparse
-
+import pickle
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel
+from matplotlib import pyplot as plt
+from collections import defaultdict
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -26,11 +28,10 @@ def parse_option():
     parser.add_argument('--width', default=1, type=int, help='backbone width')
     parser.add_argument('--num_target', type=int, default=256, help='Proposal number [default: 256]')
     parser.add_argument('--sampling', default='kps', type=str, help='Query points sampling method (kps, fps)')
-
     # Transformer
     parser.add_argument('--nhead', default=8, type=int, help='multi-head number')
-    parser.add_argument('--num_decoder_layers', default=6, type=int, help='number of decoder layers')
-    parser.add_argument('--dim_feedforward', default=2048, type=int, help='dim_feedforward')
+    parser.add_argument('--num_decoder_layers', default=4, type=int, help='number of decoder layers')
+    parser.add_argument('--dim_feedforward', default=4096, type=int, help='dim_feedforward')
     parser.add_argument('--transformer_dropout', default=0.1, type=float, help='transformer_dropout')
     parser.add_argument('--transformer_activation', default='relu', type=str, help='transformer_activation')
     parser.add_argument('--self_position_embedding', default='loc_learned', type=str,
@@ -39,10 +40,10 @@ def parse_option():
                         help='position embedding in cross attention (none, xyz_learned)')
 
     # Loss
-    parser.add_argument('--query_points_generator_loss_coef', default=0.8, type=float)
-    parser.add_argument('--obj_loss_coef', default=0.1, type=float, help='Loss weight for objectness loss')
-    parser.add_argument('--box_loss_coef', default=1, type=float, help='Loss weight for box loss')
-    parser.add_argument('--sem_cls_loss_coef', default=0.1, type=float, help='Loss weight for classification loss')
+    parser.add_argument('--query_points_generator_loss_coef', default=0.1, type=float)
+    parser.add_argument('--obj_loss_coef', default=1.0, type=float, help='Loss weight for objectness loss')
+    parser.add_argument('--box_loss_coef', default=1.0, type=float, help='Loss weight for box loss')
+    parser.add_argument('--sem_cls_loss_coef', default=0.0, type=float, help='Loss weight for classification loss')
     parser.add_argument('--center_loss_type', default='smoothl1', type=str, help='(smoothl1, l1)')
     parser.add_argument('--center_delta', default=1.0, type=float, help='delta for smoothl1 loss in center loss')
     parser.add_argument('--size_loss_type', default='smoothl1', type=str, help='(smoothl1, l1)')
@@ -53,9 +54,9 @@ def parse_option():
     parser.add_argument('--size_cls_agnostic', action='store_true', help='Use class-agnostic size prediction.')
 
     # Data
-    parser.add_argument('--batch_size', type=int, default=8, help='Batch Size per GPU during training [default: 8]')
+    parser.add_argument('--batch_size', type=int, default=2, help='Batch Size per GPU during training [default: 8]')
     parser.add_argument('--dataset', default='scannet', help='Dataset name. sunrgbd or scannet. [default: scannet]')
-    parser.add_argument('--num_point', type=int, default=50000, help='Point Number [default: 50000]')
+    parser.add_argument('--num_point', type=int, default=100000, help='Point Number [default: 50000]')
     parser.add_argument('--data_root', default='data', help='data root path')
     parser.add_argument('--use_height', action='store_true', help='Use height signal in input.')
     parser.add_argument('--use_color', action='store_true', help='Use RGB color in input.')
@@ -64,7 +65,7 @@ def parse_option():
 
     # Training
     parser.add_argument('--start_epoch', type=int, default=1, help='Epoch to run [default: 1]')
-    parser.add_argument('--max_epoch', type=int, default=400, help='Epoch to run [default: 180]')
+    parser.add_argument('--max_epoch', type=int, default=100, help='Epoch to run [default: 180]')
     parser.add_argument('--optimizer', type=str, default='adamW', help='optimizer')
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum for SGD')
     parser.add_argument('--weight_decay', type=float, default=0.0005,
@@ -77,9 +78,9 @@ def parse_option():
                         choices=["step", "cosine"], help="learning rate scheduler")
     parser.add_argument('--warmup-epoch', type=int, default=-1, help='warmup epoch')
     parser.add_argument('--warmup-multiplier', type=int, default=100, help='warmup multiplier')
-    parser.add_argument('--lr_decay_epochs', type=int, default=[280, 340], nargs='+',
+    parser.add_argument('--lr_decay_epochs', type=int, default=[50, 80], nargs='+',
                         help='for step scheduler. where to decay lr, can be a list')
-    parser.add_argument('--lr_decay_rate', type=float, default=0.1,
+    parser.add_argument('--lr_decay_rate', type=float, default=0.4,
                         help='for step scheduler. decay rate for learning rate')
     parser.add_argument('--clip_norm', default=0.1, type=float,
                         help='gradient clipping max norm')
@@ -89,12 +90,12 @@ def parse_option():
     # io
     parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
     parser.add_argument('--log_dir', default='log', help='Dump dir to save model checkpoint [default: log]')
-    parser.add_argument('--print_freq', type=int, default=10, help='print frequency')
-    parser.add_argument('--save_freq', type=int, default=100, help='save frequency')
-    parser.add_argument('--val_freq', type=int, default=50, help='val frequency')
+    parser.add_argument('--print_freq', type=int, default=1, help='print frequency')
+    parser.add_argument('--save_freq', type=int, default=500, help='save frequency')
+    parser.add_argument('--val_freq', type=int, default=20, help='val frequency')
 
     # others
-    parser.add_argument("--local_rank", type=int, help='local rank for DistributedDataParallel')
+    parser.add_argument("--local_rank", type=int, help='local rank for DistributedDataParallel', default=1)
     parser.add_argument('--ap_iou_thresholds', type=float, default=[0.25, 0.5], nargs='+',
                         help='A list of AP IoU thresholds [default: 0.25,0.5]')
     parser.add_argument("--rng_seed", type=int, default=0, help='manual seed')
@@ -157,7 +158,7 @@ def get_loader(args):
 
         DATASET_CONFIG = SunrgbdDatasetConfig()
         TRAIN_DATASET = SunrgbdDetectionVotesDataset('train', num_points=args.num_point,
-                                                     augment=True,
+                                                     augment=False,
                                                      use_color=True if args.use_color else False,
                                                      use_height=True if args.use_height else False,
                                                      use_v1=(not args.use_sunrgbd_v2),
@@ -275,17 +276,20 @@ def main(args):
         load_checkpoint(args, model, optimizer, scheduler)
 
     # Used for AP calculation
-    CONFIG_DICT = {'remove_empty_box': False, 'use_3d_nms': True,
-                   'nms_iou': 0.25, 'use_old_type_nms': False, 'cls_nms': True,
-                   'per_class_proposal': True, 'conf_thresh': 0.0,
+    CONFIG_DICT = {'remove_empty_box': True, 'use_3d_nms': True,
+                   'nms_iou': 0.1, 'use_old_type_nms': False, 'cls_nms': True,
+                   'per_class_proposal': True, 'conf_thresh': 0.2,
                    'dataset_config': DATASET_CONFIG}
 
+    eval_stat_dict = defaultdict(list)
+    train_stat_dict = defaultdict(list)
     for epoch in range(args.start_epoch, args.max_epoch + 1):
         train_loader.sampler.set_epoch(epoch)
 
         tic = time.time()
 
-        train_one_epoch(epoch, train_loader, DATASET_CONFIG, model, criterion, optimizer, scheduler, args)
+        train_stat_dict = train_one_epoch(epoch, train_loader, DATASET_CONFIG, model, criterion, optimizer, scheduler,
+                                          args, train_stat_dict)
 
         logger.info('epoch {}, total time {:.2f}, '
                     'lr_base {:.5f}, lr_decoder {:.5f}'.format(epoch, (time.time() - tic),
@@ -293,19 +297,28 @@ def main(args):
                                                                optimizer.param_groups[1]['lr']))
 
         if epoch % args.val_freq == 0:
-            evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds, model,
-                               criterion, args)
+            eval_stat_dict = evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds,
+                                                model, criterion, args, eval_stat_dict)
 
         if dist.get_rank() == 0:
             # save model
             save_checkpoint(args, epoch, model, optimizer, scheduler)
-    evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds, model, criterion, args)
+
+    evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds, model, criterion, args,
+                       defaultdict(list))
+    plot_metrics(eval_stat_dict, val_freq=args.val_freq, save_dir=args.log_dir + '/eval_plots')
+    plot_metrics(train_stat_dict, val_freq=args.val_freq, save_dir=args.log_dir + '/train_plots')
+    with open(os.path.join(args.log_dir, 'plot_metrics.pkl'), 'wb') as f:
+        pickle.dump(plot_metrics, f)
+        print(f"{os.path.join(args.log_dir, 'plot_metrics.pkl')} saved successfully !!")
+
     save_checkpoint(args, 'last', model, optimizer, scheduler, save_cur=True)
     logger.info("Saved in {}".format(os.path.join(args.log_dir, f'ckpt_epoch_last.pth')))
     return os.path.join(args.log_dir, f'ckpt_epoch_last.pth')
 
 
-def train_one_epoch(epoch, train_loader, DATASET_CONFIG, model, criterion, optimizer, scheduler, config):
+def train_one_epoch(epoch, train_loader, DATASET_CONFIG, model, criterion, optimizer, scheduler, config,
+                    train_stat_dict):
     stat_dict = {}  # collect statistics
     model.train()  # set model to training mode
     for batch_idx, batch_data_label in enumerate(train_loader):
@@ -352,27 +365,35 @@ def train_one_epoch(epoch, train_loader, DATASET_CONFIG, model, criterion, optim
                 else:
                     stat_dict[key] += end_points[key].item()
 
-        if (batch_idx + 1) % config.print_freq == 0:
-            logger.info(f'Train: [{epoch}][{batch_idx + 1}/{len(train_loader)}]  ' + ''.join(
-                [f'{key} {stat_dict[key] / config.print_freq:.4f} \t'
-                 for key in sorted(stat_dict.keys()) if 'loss' not in key]))
-            logger.info(f"grad_norm: {stat_dict['grad_norm']}")
-            logger.info(''.join([f'{key} {stat_dict[key] / config.print_freq:.4f} \t'
-                                 for key in sorted(stat_dict.keys()) if
-                                 'loss' in key and 'proposal_' not in key and 'last_' not in key and 'head_' not in key]))
-            logger.info(''.join([f'{key} {stat_dict[key] / config.print_freq:.4f} \t'
-                                 for key in sorted(stat_dict.keys()) if 'last_' in key]))
-            logger.info(''.join([f'{key} {stat_dict[key] / config.print_freq:.4f} \t'
-                                 for key in sorted(stat_dict.keys()) if 'proposal_' in key]))
-            for ihead in range(config.num_decoder_layers - 2, -1, -1):
-                logger.info(''.join([f'{key} {stat_dict[key] / config.print_freq:.4f} \t'
-                                     for key in sorted(stat_dict.keys()) if f'{ihead}head_' in key]))
+    if epoch % config.val_freq == 0:
+        for key in stat_dict.keys():
+            stat_dict[key] = stat_dict[key] / len(train_loader)
 
-            for key in sorted(stat_dict.keys()):
-                stat_dict[key] = 0
+    if epoch % config.val_freq == 0:
+        logger.info(f'Train: [{epoch}]' + ''.join(
+            [f'{key} {stat_dict[key]:.4f} \t'
+             for key in sorted(stat_dict.keys()) if 'loss' not in key]))
+        # logger.info(f"grad_norm: {stat_dict['grad_norm']}")
+        logger.info(''.join([f'{key} {stat_dict[key]:.4f} \t'
+                             for key in sorted(stat_dict.keys()) if
+                             'loss' in key and 'proposal_' not in key and 'last_' not in key and 'head_' not in key]))
+        logger.info(''.join([f'{key} {stat_dict[key]:.4f} \t'
+                             for key in sorted(stat_dict.keys()) if 'last_' in key]))
+        logger.info(''.join([f'{key} {stat_dict[key]:.4f} \t'
+                             for key in sorted(stat_dict.keys()) if 'proposal_' in key]))
+        for ihead in range(config.num_decoder_layers - 2, -1, -1):
+            logger.info(''.join([f'{key} {stat_dict[key]:.4f} \t'
+                                 for key in sorted(stat_dict.keys()) if f'{ihead}head_' in key]))
+
+        if epoch % config.val_freq == 0:
+            for key in stat_dict.keys():
+                if ('loss' in key) or ('acc' in key):
+                    train_stat_dict[key].append(stat_dict[key])
+    return train_stat_dict
 
 
-def evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, AP_IOU_THRESHOLDS, model, criterion, config):
+def evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, AP_IOU_THRESHOLDS, model, criterion, config,
+                       plots_dict):
     stat_dict = {}
 
     if config.num_decoder_layers > 0:
@@ -446,7 +467,6 @@ def evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, AP_IOU_THRESHOL
             for ihead in range(config.num_decoder_layers - 2, -1, -1):
                 logger.info(''.join([f'{key} {stat_dict[key] / (float(batch_idx + 1)):.4f} \t'
                                      for key in sorted(stat_dict.keys()) if f'{ihead}head_' in key]))
-
     mAP = 0.0
     for prefix in prefixes:
         for (batch_pred_map_cls, batch_gt_map_cls) in zip(batch_pred_map_cls_dict[prefix],
@@ -462,12 +482,25 @@ def evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, AP_IOU_THRESHOL
             if prefix == 'last_' and ap_calculator.ap_iou_thresh > 0.3:
                 mAP = metrics_dict['mAP']
             mAPs[i][1][prefix] = metrics_dict['mAP']
+            plots_dict[f'{prefix}_{ap_calculator.ap_iou_thresh}_AP'].append(metrics_dict['mAP'])
+            plots_dict[f'{prefix}_{ap_calculator.ap_iou_thresh}_AR'].append(metrics_dict['AR'])
             ap_calculator.reset()
 
     for mAP in mAPs:
         logger.info(f'IoU[{mAP[0]}]:\t' + ''.join([f'{key}: {mAP[1][key]:.4f} \t' for key in sorted(mAP[1].keys())]))
 
-    return mAP, mAPs
+    return plots_dict
+
+
+def plot_metrics(plots_dict, val_freq, save_dir):
+    if not os.path.exists(save_dir):
+        os.mkdir(save_dir)
+    for key, metrics_list in plots_dict.items():
+        plt.figure()
+        plt.title(key)
+        plt.plot([(i + 1) * val_freq for i in range(len(metrics_list))], metrics_list)
+        plt.savefig(save_dir + f'/{key}.jpg')
+        plt.close()
 
 
 if __name__ == '__main__':

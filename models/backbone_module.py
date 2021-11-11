@@ -1,5 +1,5 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
-# 
+#
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
@@ -21,8 +21,8 @@ from pointnet2_modules import PointnetSAModuleVotes, PointnetFPModule
 class Pointnet2Backbone(nn.Module):
     r"""
        Backbone network for point cloud feature learning.
-       Based on Pointnet++ single-scale grouping network. 
-        
+       Based on Pointnet++ single-scale grouping network.
+
        Parameters
        ----------
        input_feature_dim: int
@@ -30,49 +30,50 @@ class Pointnet2Backbone(nn.Module):
             e.g. 3 for RGB.
     """
 
-    def __init__(self, input_feature_dim=0, width=1, depth=2):
+    def __init__(self, input_feature_dim=0, width=1, depth=2, backbone_out_feats=288):
         super().__init__()
         self.depth = depth
         self.width = width
+        self.backbone_out_feats = backbone_out_feats
 
         self.sa1 = PointnetSAModuleVotes(
-            npoint=2048,
+            npoint=4096, # 2048
             radius=0.2,
-            nsample=64,
-            mlp=[input_feature_dim] + [64 * width for i in range(depth)] + [128 * width],
+            nsample=128, # 64
+            mlp=[input_feature_dim] + [128 * width for i in range(depth)] + [256 * width], # 64 and 128
             use_xyz=True,
             normalize_xyz=True
         )
 
         self.sa2 = PointnetSAModuleVotes(
-            npoint=1024,
+            npoint=2048, # 1024
             radius=0.4,
-            nsample=32,
-            mlp=[128 * width] + [128 * width for i in range(depth)] + [256 * width],
+            nsample=64, # 64
+            mlp=[256 * width] + [256 * width for i in range(depth)] + [512 * width], # 128 and 256
             use_xyz=True,
             normalize_xyz=True
         )
 
         self.sa3 = PointnetSAModuleVotes(
-            npoint=512,
+            npoint=1024, # 512
             radius=0.8,
-            nsample=16,
-            mlp=[256 * width] + [128 * width for i in range(depth)] + [256 * width],
+            nsample=32, # 16
+            mlp=[512 * width] + [256 * width for i in range(depth)] + [512 * width], # 256, 128 and 256
             use_xyz=True,
             normalize_xyz=True
         )
 
         self.sa4 = PointnetSAModuleVotes(
-            npoint=256,
+            npoint=512, # 256
             radius=1.2,
-            nsample=16,
-            mlp=[256 * width] + [128 * width for i in range(depth)] + [256 * width],
+            nsample=32, # 16
+            mlp=[512 * width] + [128 * width for i in range(depth)] + [256 * width], # 256, 128, 256
             use_xyz=True,
             normalize_xyz=True
         )
 
-        self.fp1 = PointnetFPModule(mlp=[256 * width + 256 * width, 256 * width, 256 * width])
-        self.fp2 = PointnetFPModule(mlp=[256 * width + 256 * width, 256 * width, 288])
+        self.fp1 = PointnetFPModule(mlp=[512 * width + 256 * width, 512 * width, 256 * width]) # 256, 256, 256, 256
+        self.fp2 = PointnetFPModule(mlp=[384 * width + 384 * width, 384 * width, self.backbone_out_feats]) # 256, 256, 256, 288
 
     def _break_up_pc(self, pc):
         xyz = pc[..., 0:3].contiguous()

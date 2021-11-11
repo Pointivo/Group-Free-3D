@@ -15,26 +15,14 @@ sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 
 class SunrgbdDatasetConfig(object):
     def __init__(self):
-        self.num_class = 10
-        self.num_heading_bin = 12
-        self.num_size_cluster = 10
+        self.num_class = 1
+        self.num_heading_bin = 24
+        self.num_size_cluster = 1
 
-        self.type2class = {'bed': 0, 'table': 1, 'sofa': 2, 'chair': 3, 'toilet': 4, 'desk': 5, 'dresser': 6,
-                           'night_stand': 7, 'bookshelf': 8, 'bathtub': 9}
+        self.type2class = {'antenna': 0}
         self.class2type = {self.type2class[t]: t for t in self.type2class}
-        self.type2onehotclass = {'bed': 0, 'table': 1, 'sofa': 2, 'chair': 3, 'toilet': 4, 'desk': 5, 'dresser': 6,
-                                 'night_stand': 7, 'bookshelf': 8, 'bathtub': 9}
-        self.type_mean_size = {'bathtub': np.array([0.765840, 1.398258, 0.472728]),
-                               'bed': np.array([2.114256, 1.620300, 0.927272]),
-                               'bookshelf': np.array([0.404671, 1.071108, 1.688889]),
-                               'chair': np.array([0.591958, 0.552978, 0.827272]),
-                               'desk': np.array([0.695190, 1.346299, 0.736364]),
-                               'dresser': np.array([0.528526, 1.002642, 1.172878]),
-                               'night_stand': np.array([0.500618, 0.632163, 0.683424]),
-                               'sofa': np.array([0.923508, 1.867419, 0.845495]),
-                               'table': np.array([0.791118, 1.279516, 0.718182]),
-                               'toilet': np.array([0.699104, 0.454178, 0.756250])}
-
+        self.type2onehotclass = {'antenna': 0}
+        self.type_mean_size = {'antenna': np.array([0.27898183, 0.28993171, 1.94192293])}
         self.mean_size_arr = np.zeros((self.num_size_cluster, 3))
         for i in range(self.num_size_cluster):
             self.mean_size_arr[i, :] = self.type_mean_size[self.class2type[i]]
@@ -52,9 +40,9 @@ class SunrgbdDatasetConfig(object):
 
     def angle2class(self, angle):
         ''' Convert continuous angle to discrete class
-            [optinal] also small regression number from  
+            [optinal] also small regression number from
             class center angle to current angle.
-           
+
             angle is from 0-2pi (or -pi~pi), class center at 0, 1*(2pi/N), 2*(2pi/N) ...  (N-1)*(2pi/N)
             return is class of int32 of 0,1,...,N-1 and a number such that
                 class*(2pi/N) + number = angle
@@ -86,3 +74,11 @@ class SunrgbdDatasetConfig(object):
         obb[3:6] = box_size
         obb[6] = heading_angle * -1
         return obb
+
+
+if __name__ == '__main__':
+    sun = SunrgbdDatasetConfig()
+    angle = -np.pi / 7
+    angle_class = sun.angle2class(angle)
+    angle_pred = sun.class2angle(angle_class[0], residual=angle_class[1])
+    print(f"angle: {angle}, pred_angle: {angle_pred}")

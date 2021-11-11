@@ -158,7 +158,7 @@ def get_loader(args):
 
         DATASET_CONFIG = SunrgbdDatasetConfig()
         TRAIN_DATASET = SunrgbdDetectionVotesDataset('train', num_points=args.num_point,
-                                                     augment=False,
+                                                     augment=True,
                                                      use_color=True if args.use_color else False,
                                                      use_height=True if args.use_height else False,
                                                      use_v1=(not args.use_sunrgbd_v2),

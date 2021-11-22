@@ -23,7 +23,7 @@ Date: 2019
 import os
 import pickle
 import sys
-
+import glob
 import numpy as np
 from torch.utils.data import Dataset
 
@@ -45,7 +45,7 @@ MEAN_COLOR_RGB = np.array([0.5, 0.5, 0.5])  # sunrgbd color is in 0~1
 class SunrgbdDetectionVotesDataset(Dataset):
     def __init__(self, split_set='train', num_points=20000,
                  use_color=False, use_height=False, use_v1=False,
-                 augment=False, data_root=None):
+                 augment=False, data_root=None, load_all_data=False):
 
         assert (num_points <= 100000)
         self.use_v1 = use_v1
@@ -54,7 +54,7 @@ class SunrgbdDetectionVotesDataset(Dataset):
         self.augment = augment
         self.use_color = use_color
         self.use_height = use_height
-
+        self.load_all_data = load_all_data
         if data_root is None:
             data_root = ROOT_DIR
 
@@ -62,24 +62,27 @@ class SunrgbdDetectionVotesDataset(Dataset):
             self.data_path = os.path.join(data_root, f'sunrgbd/sunrgbd_pc_bbox_votes_50k_v1_{split_set}')
         else:
             self.data_path = os.path.join(data_root, f'sunrgbd/sunrgbd_pc_bbox_votes_50k_v2_{split_set}')
+        if self.load_all_data:
+            pickle_filename = os.path.join(self.data_path, 'all_obbs_modified_nearest_has_empty.pkl')
+            with open(pickle_filename, 'rb') as f:
+                self.bboxes_list = pickle.load(f)
+            print(f"{pickle_filename} loaded successfully !!!")
 
-        pickle_filename = os.path.join(self.data_path, 'all_obbs_modified_nearest_has_empty.pkl')
-        with open(pickle_filename, 'rb') as f:
-            self.bboxes_list = pickle.load(f)
-        print(f"{pickle_filename} loaded successfully !!!")
+            pickle_filename = os.path.join(self.data_path, 'all_pc_modified_nearest_has_empty.pkl')
+            with open(pickle_filename, 'rb') as f:
+                self.point_cloud_list = pickle.load(f)
+            print(f"{pickle_filename} loaded successfully !!!")
 
-        pickle_filename = os.path.join(self.data_path, 'all_pc_modified_nearest_has_empty.pkl')
-        with open(pickle_filename, 'rb') as f:
-            self.point_cloud_list = pickle.load(f)
-        print(f"{pickle_filename} loaded successfully !!!")
-
-        pickle_filename = os.path.join(self.data_path, 'all_point_labels_nearest_has_empty.pkl')
-        with open(pickle_filename, 'rb') as f:
-            self.point_labels_list = pickle.load(f)
-        print(f"{pickle_filename} loaded successfully !!!")
+            pickle_filename = os.path.join(self.data_path, 'all_point_labels_nearest_has_empty.pkl')
+            with open(pickle_filename, 'rb') as f:
+                self.point_labels_list = pickle.load(f)
+            print(f"{pickle_filename} loaded successfully !!!")
 
     def __len__(self):
-        return len(self.point_cloud_list)
+        if self.load_all_data:
+            return len(self.point_cloud_list)
+        else:
+            return len(glob.glob(str(self.data_path) + '/*_pc.npz'))
 
     def __getitem__(self, idx):
         """
@@ -98,12 +101,17 @@ class SunrgbdDetectionVotesDataset(Dataset):
             scan_idx: int scan index in scan_names list
             max_gt_bboxes: unused
         """
-
-        point_cloud = self.point_cloud_list[idx]  # Nx6
-        bboxes = self.bboxes_list[idx]  # K,8
-        point_obj_mask = self.point_labels_list[idx][:, 0]
-        point_instance_label = self.point_labels_list[idx][:, -1]
-
+        if self.load_all_data:
+            point_cloud = self.point_cloud_list[idx]  # Nx6
+            bboxes = self.bboxes_list[idx]  # K,8
+            point_obj_mask = self.point_labels_list[idx][:, 0]
+            point_instance_label = self.point_labels_list[idx][:, -1]
+        else:
+            bboxes = np.load(os.path.join(self.data_path, f'{idx:06d}_bbox.npy'))
+            point_cloud = np.load(os.path.join(self.data_path, f'{idx:06d}_pc.npz'))['pc']
+            point_labels = np.load(os.path.join(self.data_path, f'{idx:06d}_point_label.npz'))['point_labels']
+            point_obj_mask = point_labels[:, 0]
+            point_instance_label = point_labels[:, -1]
         if not self.use_color:
             point_cloud = point_cloud[:, 0:3]
         else:

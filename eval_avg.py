@@ -25,7 +25,7 @@ def parse_option():
     parser.add_argument('--dump_dir', default='dump', help='Dump dir to save sample outputs [default: None]')
     parser.add_argument('--use_old_type_nms', action='store_true', help='Use old type of NMS, IoBox2Area.')
     parser.add_argument('--nms_iou', type=float, default=0.1, help='NMS IoU threshold. [default: 0.25]')
-    parser.add_argument('--conf_thresh', type=float, default=0.2,
+    parser.add_argument('--conf_thresh', type=float, default=0.1,
                         help='Filter out predictions with obj prob less than it. [default: 0.05]')
     parser.add_argument('--ap_iou_thresholds', type=float, default=[0.25, 0.5], nargs='+',
                         help='A list of AP IoU thresholds [default: 0.25,0.5]')
@@ -64,16 +64,16 @@ def parse_option():
     parser.add_argument('--size_cls_agnostic', action='store_true', help='Use class-agnostic size prediction.')
 
     # Data
-    parser.add_argument('--batch_size', type=int, default=6, help='Batch Size during training [default: 8]')
+    parser.add_argument('--batch_size', type=int, default=3, help='Batch Size during training [default: 8]')
     parser.add_argument('--dataset', default='scannet', help='Dataset name. sunrgbd or scannet. [default: scannet]')
     parser.add_argument('--num_point', type=int, default=100000, help='Point Number [default: 50000]')
     parser.add_argument('--data_root', default='data', help='data root path')
     parser.add_argument('--use_height', action='store_true', help='Use height signal in input.')
     parser.add_argument('--use_color', action='store_true', help='Use RGB color in input.')
     parser.add_argument('--use_sunrgbd_v2', action='store_true', help='Use SUN RGB-D V2 box labels.')
-
+    parser.add_argument('--load_all_data', action='store_true', help='Loads all the data into memory if True, '
+                                                                     'otherwise only loads a single batch data.')
     args, unparsed = parser.parse_known_args()
-
     return args
 
 
@@ -93,7 +93,8 @@ def get_loader(args):
                                                     use_color=True if args.use_color else False,
                                                     use_height=True if args.use_height else False,
                                                     use_v1=(not args.use_sunrgbd_v2),
-                                                    data_root=args.data_root)
+                                                    data_root=args.data_root,
+                                                    load_all_data=args.load_all_data)
     elif args.dataset == 'scannet':
         sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
         from scannet.scannet_detection_dataset import ScannetDetectionDataset
@@ -334,9 +335,9 @@ def eval(args, avg_times=5):
     logger.info(str(model))
     save_path = load_checkpoint(args, model)
     model = model.cuda()
-    if torch.cuda.device_count() > 1:
-        logger.info("Let's use %d GPUs!" % (torch.cuda.device_count()))
-        model = torch.nn.DataParallel(model)
+    # if torch.cuda.device_count() > 1:
+    #     logger.info("Let's use %d GPUs!" % (torch.cuda.device_count()))
+    #     model = torch.nn.DataParallel(model)
 
     # Used for AP calculation
     CONFIG_DICT = {'remove_empty_box': True, 'use_3d_nms': True, 'nms_iou': args.nms_iou,

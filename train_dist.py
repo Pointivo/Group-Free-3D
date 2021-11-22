@@ -61,6 +61,8 @@ def parse_option():
     parser.add_argument('--use_height', action='store_true', help='Use height signal in input.')
     parser.add_argument('--use_color', action='store_true', help='Use RGB color in input.')
     parser.add_argument('--use_sunrgbd_v2', action='store_true', help='Use V2 box labels for SUN RGB-D dataset')
+    parser.add_argument('--load_all_data', action='store_true', help='Loads all the data into memory if True, '
+                                                                     'otherwise only loads a single batch data.')
     parser.add_argument('--num_workers', type=int, default=4, help='num of workers to use')
 
     # Training
@@ -158,17 +160,19 @@ def get_loader(args):
 
         DATASET_CONFIG = SunrgbdDatasetConfig()
         TRAIN_DATASET = SunrgbdDetectionVotesDataset('train', num_points=args.num_point,
-                                                     augment=True,
+                                                     augment=False,
                                                      use_color=True if args.use_color else False,
                                                      use_height=True if args.use_height else False,
                                                      use_v1=(not args.use_sunrgbd_v2),
-                                                     data_root=args.data_root)
+                                                     data_root=args.data_root,
+                                                     load_all_data=args.load_all_data)
         TEST_DATASET = SunrgbdDetectionVotesDataset('val', num_points=args.num_point,
                                                     augment=False,
                                                     use_color=True if args.use_color else False,
                                                     use_height=True if args.use_height else False,
                                                     use_v1=(not args.use_sunrgbd_v2),
-                                                    data_root=args.data_root)
+                                                    data_root=args.data_root,
+                                                    load_all_data=args.load_all_data)
     elif args.dataset == 'scannet':
         sys.path.append(os.path.join(ROOT_DIR, 'scannet'))
         from scannet.scannet_detection_dataset import ScannetDetectionDataset
@@ -278,7 +282,7 @@ def main(args):
     # Used for AP calculation
     CONFIG_DICT = {'remove_empty_box': True, 'use_3d_nms': True,
                    'nms_iou': 0.1, 'use_old_type_nms': False, 'cls_nms': True,
-                   'per_class_proposal': True, 'conf_thresh': 0.2,
+                   'per_class_proposal': True, 'conf_thresh': 0.1,
                    'dataset_config': DATASET_CONFIG}
 
     eval_stat_dict = defaultdict(list)

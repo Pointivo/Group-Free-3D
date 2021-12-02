@@ -93,8 +93,8 @@ def parse_option():
     parser.add_argument('--checkpoint_path', default=None, help='Model checkpoint path [default: None]')
     parser.add_argument('--log_dir', default='log', help='Dump dir to save model checkpoint [default: log]')
     parser.add_argument('--print_freq', type=int, default=1, help='print frequency')
-    parser.add_argument('--save_freq', type=int, default=500, help='save frequency')
-    parser.add_argument('--val_freq', type=int, default=20, help='val frequency')
+    parser.add_argument('--save_freq', type=int, default=10, help='save frequency')
+    parser.add_argument('--val_freq', type=int, default=10, help='val frequency')
 
     # others
     parser.add_argument("--local_rank", type=int, help='local rank for DistributedDataParallel', default=1)
@@ -522,9 +522,9 @@ def plot_metrics(plots_dict_1, val_freq, save_dir, plots_dict_2=None, label_1=No
         if (plots_dict_2 is not None) and (key in plots_dict_2):
             metrics_list_2 = plots_dict_2[key]
             plt.plot([(i + 1) * val_freq for i in range(len(metrics_list_2))], metrics_list_2, color='g', label=label_2)
-        plt.xlabel("Metrics")
-        plt.ylabel("Epochs")
-        plt.legend()
+            plt.legend()
+        plt.xlabel("Epochs")
+        plt.ylabel("Metrics")
         plt.savefig(save_dir + f'/{key}.jpg')
         plt.close()
 

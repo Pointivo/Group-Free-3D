@@ -285,15 +285,16 @@ def main(args):
                    'per_class_proposal': True, 'conf_thresh': 0.1,
                    'dataset_config': DATASET_CONFIG}
 
-    eval_stat_dict = defaultdict(list)
-    train_stat_dict = defaultdict(list)
+    val_metrics_dict = defaultdict(list)
+    train_metrics_dict = defaultdict(list)
+    train_loss_dict = defaultdict(list)
     for epoch in range(args.start_epoch, args.max_epoch + 1):
         train_loader.sampler.set_epoch(epoch)
 
         tic = time.time()
 
-        train_stat_dict = train_one_epoch(epoch, train_loader, DATASET_CONFIG, model, criterion, optimizer, scheduler,
-                                          args, train_stat_dict)
+        train_loss_dict = train_one_epoch(epoch, train_loader, DATASET_CONFIG, model, criterion, optimizer, scheduler,
+                                          args, train_loss_dict)
 
         logger.info('epoch {}, total time {:.2f}, '
                     'lr_base {:.5f}, lr_decoder {:.5f}'.format(epoch, (time.time() - tic),
@@ -301,8 +302,16 @@ def main(args):
                                                                optimizer.param_groups[1]['lr']))
 
         if epoch % args.val_freq == 0:
-            eval_stat_dict = evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds,
-                                                model, criterion, args, eval_stat_dict)
+            train_metrics_dict = evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds,
+                                                    model, criterion, args, train_metrics_dict)
+            val_metrics_dict = evaluate_one_epoch(train_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds,
+                                                  model, criterion, args, val_metrics_dict)
+            plot_metrics(plots_dict_1=train_metrics_dict, val_freq=args.val_freq,
+                         save_dir=args.log_dir + '/eval_metrics_plots',
+                         plots_dict_2=val_metrics_dict, label_1='train', label_2='validation')
+
+        plot_metrics(plots_dict_1=train_loss_dict, val_freq=args.val_freq,
+                     save_dir=args.log_dir + '/train_metrics_plots')
 
         if dist.get_rank() == 0:
             # save model
@@ -310,11 +319,18 @@ def main(args):
 
     evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds, model, criterion, args,
                        defaultdict(list))
-    plot_metrics(eval_stat_dict, val_freq=args.val_freq, save_dir=args.log_dir + '/eval_plots')
-    plot_metrics(train_stat_dict, val_freq=args.val_freq, save_dir=args.log_dir + '/train_plots')
-    with open(os.path.join(args.log_dir, 'plot_metrics.pkl'), 'wb') as f:
-        pickle.dump(plot_metrics, f)
-        print(f"{os.path.join(args.log_dir, 'plot_metrics.pkl')} saved successfully !!")
+
+    with open(os.path.join(args.log_dir, 'train_loss_dict.pkl'), 'wb') as f:
+        pickle.dump(train_loss_dict, f)
+        print(f"{os.path.join(args.log_dir, 'train_loss_dict.pkl')} saved successfully !!")
+
+    with open(os.path.join(args.log_dir, 'val_metrics_dict.pkl'), 'wb') as f:
+        pickle.dump(val_metrics_dict, f)
+        print(f"{os.path.join(args.log_dir, 'val_metrics_dict.pkl')} saved successfully !!")
+
+    with open(os.path.join(args.log_dir, 'train_metrics_dict.pkl'), 'wb') as f:
+        pickle.dump(train_metrics_dict, f)
+        print(f"{os.path.join(args.log_dir, 'train_metrics_dict.pkl')} saved successfully !!")
 
     save_checkpoint(args, 'last', model, optimizer, scheduler, save_cur=True)
     logger.info("Saved in {}".format(os.path.join(args.log_dir, f'ckpt_epoch_last.pth')))
@@ -496,13 +512,19 @@ def evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, AP_IOU_THRESHOL
     return plots_dict
 
 
-def plot_metrics(plots_dict, val_freq, save_dir):
+def plot_metrics(plots_dict_1, val_freq, save_dir, plots_dict_2=None, label_1=None, label_2=None):
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
-    for key, metrics_list in plots_dict.items():
+    for key, metrics_list in plots_dict_1.items():
         plt.figure()
         plt.title(key)
-        plt.plot([(i + 1) * val_freq for i in range(len(metrics_list))], metrics_list)
+        plt.plot([(i + 1) * val_freq for i in range(len(metrics_list))], metrics_list, color='r', label=label_1)
+        if (plots_dict_2 is not None) and (key in plots_dict_2):
+            metrics_list_2 = plots_dict_2[key]
+            plt.plot([(i + 1) * val_freq for i in range(len(metrics_list_2))], metrics_list_2, color='g', label=label_2)
+        plt.xlabel("Metrics")
+        plt.ylabel("Epochs")
+        plt.legend()
         plt.savefig(save_dir + f'/{key}.jpg')
         plt.close()
 

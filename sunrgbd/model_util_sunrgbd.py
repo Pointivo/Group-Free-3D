@@ -16,7 +16,7 @@ sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 class SunrgbdDatasetConfig(object):
     def __init__(self):
         self.num_class = 1
-        self.num_heading_bin = 24
+        self.num_heading_bin = 12
         self.num_size_cluster = 1
 
         self.type2class = {'antenna': 0}

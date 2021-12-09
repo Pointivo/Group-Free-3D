@@ -56,7 +56,7 @@ def parse_option():
     # Data
     parser.add_argument('--batch_size', type=int, default=2, help='Batch Size per GPU during training [default: 8]')
     parser.add_argument('--dataset', default='scannet', help='Dataset name. sunrgbd or scannet. [default: scannet]')
-    parser.add_argument('--num_point', type=int, default=100000, help='Point Number [default: 50000]')
+    parser.add_argument('--num_point', type=int, default=150000, help='Point Number [default: 50000]')
     parser.add_argument('--data_root', default='data', help='data root path')
     parser.add_argument('--use_height', action='store_true', help='Use height signal in input.')
     parser.add_argument('--use_color', action='store_true', help='Use RGB color in input.')
@@ -67,7 +67,7 @@ def parse_option():
 
     # Training
     parser.add_argument('--start_epoch', type=int, default=1, help='Epoch to run [default: 1]')
-    parser.add_argument('--max_epoch', type=int, default=100, help='Epoch to run [default: 180]')
+    parser.add_argument('--max_epoch', type=int, default=700, help='Epoch to run [default: 180]')
     parser.add_argument('--optimizer', type=str, default='adamW', help='optimizer')
     parser.add_argument('--momentum', type=float, default=0.9, help='momentum for SGD')
     parser.add_argument('--weight_decay', type=float, default=0.0005,

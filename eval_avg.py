@@ -35,12 +35,12 @@ def parse_option():
 
     # Model
     parser.add_argument('--width', default=1, type=int, help='backbone width')
-    parser.add_argument('--num_target', type=int, default=256, help='Proposal number [default: 256]')
+    parser.add_argument('--num_target', type=int, default=512, help='Proposal number [default: 256]')
     parser.add_argument('--sampling', default='kps', type=str, help='Query points sampling method (kps, fps)')
 
     # Transformer
     parser.add_argument('--nhead', default=8, type=int, help='multi-head number')
-    parser.add_argument('--num_decoder_layers', default=4, type=int, help='number of decoder layers')
+    parser.add_argument('--num_decoder_layers', default=8, type=int, help='number of decoder layers')
     parser.add_argument('--dim_feedforward', default=4096, type=int, help='dim_feedforward')
     parser.add_argument('--transformer_dropout', default=0.1, type=float, help='transformer_dropout')
     parser.add_argument('--transformer_activation', default='relu', type=str, help='transformer_activation')
@@ -66,7 +66,7 @@ def parse_option():
     # Data
     parser.add_argument('--batch_size', type=int, default=3, help='Batch Size during training [default: 8]')
     parser.add_argument('--dataset', default='scannet', help='Dataset name. sunrgbd or scannet. [default: scannet]')
-    parser.add_argument('--num_point', type=int, default=100000, help='Point Number [default: 50000]')
+    parser.add_argument('--num_point', type=int, default=150000, help='Point Number [default: 50000]')
     parser.add_argument('--data_root', default='data', help='data root path')
     parser.add_argument('--use_height', action='store_true', help='Use height signal in input.')
     parser.add_argument('--use_color', action='store_true', help='Use RGB color in input.')

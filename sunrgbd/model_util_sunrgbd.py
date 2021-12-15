@@ -15,30 +15,15 @@ sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 
 class SunrgbdDatasetConfig(object):
     def __init__(self):
-        self.num_class = 1
+        self.num_class = 2
         self.num_heading_bin = 24
-        self.num_size_cluster = 1
+        self.num_size_cluster = 2
 
-        self.type2class = {'dipole': 0, 'dish_grid': 1, 'dish_horn': 2, 'dish_hp': 3, 'dish_radome': 4,
-                           'dish_standard': 5, 'fm': 6, 'gps': 7, 'omni': 8, 'panel': 9, 'tv': 10, 'yagi': 11,
-                           'ancillary_equipment': 12}
+        self.type2class = {'panel': 0, 'dish': 1}
         self.class2type = {self.type2class[t]: t for t in self.type2class}
-        self.type2onehotclass = {'dipole': 0, 'dish_grid': 1, 'dish_horn': 2, 'dish_hp': 3, 'dish_radome': 4,
-                                 'dish_standard': 5, 'fm': 6, 'gps': 7, 'omni': 8, 'panel': 9, 'tv': 10, 'yagi': 11,
-                                 'ancillary_equipment': 12}
-        self.type_mean_size = {'dipole': np.array([0.27898183, 0.28993171, 1.94192293]),
-                               'dish_grid': np.array([0.27898183, 0.28993171, 1.94192293]),
-                               'dish_horn': np.array([0.27898183, 0.28993171, 1.94192293]),
-                               'dish_hp': np.array([0.27898183, 0.28993171, 1.94192293]),
-                               'dish_radome': np.array([0.27898183, 0.28993171, 1.94192293]),
-                               'dish_standard': np.array([0.27898183, 0.28993171, 1.94192293]),
-                               'fm': np.array([0.27898183, 0.28993171, 1.94192293]),
-                               'gps': np.array([0.27898183, 0.28993171, 1.94192293]),
-                               'omni': np.array([0.27898183, 0.28993171, 1.94192293]),
-                               'panel': np.array([0.27898183, 0.28993171, 1.94192293]),
-                               'tv': np.array([0.27898183, 0.28993171, 1.94192293]),
-                               'yagi': np.array([0.27898183, 0.28993171, 1.94192293]),
-                               'ancillary_equipment': np.array([0.27898183, 0.28993171, 1.94192293])}
+        self.type2onehotclass = {'panel': 0, 'dish': 1}
+        self.type_mean_size = {'panel': np.array([0.285384, 0.295038, 1.925716]),
+                               'dish': np.array([0.7776338, 0.847521, 1.1983821])}
         self.mean_size_arr = np.zeros((self.num_size_cluster, 3))
         for i in range(self.num_size_cluster):
             self.mean_size_arr[i, :] = self.type_mean_size[self.class2type[i]]

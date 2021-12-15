@@ -26,11 +26,11 @@ def parse_option():
     parser = argparse.ArgumentParser()
     # Model
     parser.add_argument('--width', default=1, type=int, help='backbone width')
-    parser.add_argument('--num_target', type=int, default=256, help='Proposal number [default: 256]')
+    parser.add_argument('--num_target', type=int, default=512, help='Proposal number [default: 256]')
     parser.add_argument('--sampling', default='kps', type=str, help='Query points sampling method (kps, fps)')
     # Transformer
     parser.add_argument('--nhead', default=8, type=int, help='multi-head number')
-    parser.add_argument('--num_decoder_layers', default=4, type=int, help='number of decoder layers')
+    parser.add_argument('--num_decoder_layers', default=8, type=int, help='number of decoder layers')
     parser.add_argument('--dim_feedforward', default=4096, type=int, help='dim_feedforward')
     parser.add_argument('--transformer_dropout', default=0.1, type=float, help='transformer_dropout')
     parser.add_argument('--transformer_activation', default='relu', type=str, help='transformer_activation')
@@ -97,7 +97,7 @@ def parse_option():
     parser.add_argument('--val_freq', type=int, default=10, help='val frequency')
 
     # others
-    parser.add_argument("--local_rank", type=int, help='local rank for DistributedDataParallel', default=1)
+    parser.add_argument("--local_rank", type=int, help='local rank for DistributedDataParallel', default=2)
     parser.add_argument('--ap_iou_thresholds', type=float, default=[0.25, 0.5], nargs='+',
                         help='A list of AP IoU thresholds [default: 0.25,0.5]')
     parser.add_argument("--rng_seed", type=int, default=0, help='manual seed')

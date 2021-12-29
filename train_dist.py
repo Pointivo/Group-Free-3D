@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import numpy as np
+from tqdm import tqdm
 import json
 import argparse
 import pickle
@@ -26,7 +27,7 @@ def parse_option():
     parser = argparse.ArgumentParser()
     # Model
     parser.add_argument('--width', default=1, type=int, help='backbone width')
-    parser.add_argument('--num_target', type=int, default=512, help='Proposal number [default: 256]')
+    parser.add_argument('--num_target', type=int, default=256, help='Proposal number [default: 256]')
     parser.add_argument('--sampling', default='kps', type=str, help='Query points sampling method (kps, fps)')
     # Transformer
     parser.add_argument('--nhead', default=8, type=int, help='multi-head number')
@@ -55,8 +56,9 @@ def parse_option():
 
     # Data
     parser.add_argument('--batch_size', type=int, default=2, help='Batch Size per GPU during training [default: 8]')
+    parser.add_argument('--val_batch_size', type=int, default=4, help='Batch Size per GPU during training [default: 8]')
     parser.add_argument('--dataset', default='scannet', help='Dataset name. sunrgbd or scannet. [default: scannet]')
-    parser.add_argument('--num_point', type=int, default=150000, help='Point Number [default: 50000]')
+    parser.add_argument('--num_point', type=int, default=450000, help='Point Number [default: 50000]')
     parser.add_argument('--data_root', default='data', help='data root path')
     parser.add_argument('--use_height', action='store_true', help='Use height signal in input.')
     parser.add_argument('--use_color', action='store_true', help='Use RGB color in input.')
@@ -82,7 +84,7 @@ def parse_option():
     parser.add_argument('--warmup-multiplier', type=int, default=100, help='warmup multiplier')
     parser.add_argument('--lr_decay_epochs', type=int, default=[50, 80], nargs='+',
                         help='for step scheduler. where to decay lr, can be a list')
-    parser.add_argument('--lr_decay_rate', type=float, default=0.4,
+    parser.add_argument('--lr_decay_rate', type=float, default=0.3,
                         help='for step scheduler. decay rate for learning rate')
     parser.add_argument('--clip_norm', default=0.1, type=float,
                         help='gradient clipping max norm')
@@ -95,13 +97,13 @@ def parse_option():
     parser.add_argument('--print_freq', type=int, default=1, help='print frequency')
     parser.add_argument('--save_freq', type=int, default=10, help='save frequency')
     parser.add_argument('--val_freq', type=int, default=10, help='val frequency')
+    parser.add_argument('--train_eval_freq', type=int, default=40, help='train eval frequency')
 
     # others
     parser.add_argument("--local_rank", type=int, help='local rank for DistributedDataParallel', default=2)
     parser.add_argument('--ap_iou_thresholds', type=float, default=[0.25, 0.5], nargs='+',
                         help='A list of AP IoU thresholds [default: 0.25,0.5]')
     parser.add_argument("--rng_seed", type=int, default=0, help='manual seed')
-
     args, unparsed = parser.parse_known_args()
 
     return args
@@ -203,19 +205,25 @@ def get_loader(args):
                                                pin_memory=True,
                                                sampler=train_sampler,
                                                drop_last=True)
+    train_eval_loader = torch.utils.data.DataLoader(TRAIN_DATASET,
+                                                    batch_size=args.val_batch_size,
+                                                    shuffle=False,
+                                                    num_workers=args.num_workers,
+                                                    worker_init_fn=my_worker_init_fn,
+                                                    pin_memory=True,
+                                                    drop_last=True)
 
-    test_sampler = torch.utils.data.distributed.DistributedSampler(TEST_DATASET, shuffle=False)
+    # test_sampler = torch.utils.data.distributed.DistributedSampler(TEST_DATASET, shuffle=False)
     test_loader = torch.utils.data.DataLoader(TEST_DATASET,
-                                              batch_size=args.batch_size,
+                                              batch_size=args.val_batch_size,
                                               shuffle=False,
                                               num_workers=args.num_workers,
                                               worker_init_fn=my_worker_init_fn,
                                               pin_memory=True,
-                                              sampler=test_sampler,
                                               drop_last=False)
     print(f"train_loader_len: {len(train_loader)}, test_loader_len: {len(test_loader)}")
 
-    return train_loader, test_loader, DATASET_CONFIG
+    return train_loader, train_eval_loader, test_loader, DATASET_CONFIG
 
 
 def get_model(args, DATASET_CONFIG):
@@ -247,7 +255,7 @@ def get_model(args, DATASET_CONFIG):
 
 
 def main(args):
-    train_loader, test_loader, DATASET_CONFIG = get_loader(args)
+    train_loader, train_eval_loader, test_loader, DATASET_CONFIG = get_loader(args)
     n_data = len(train_loader.dataset)
     logger.info(f"length of training dataset: {n_data}")
     n_data = len(test_loader.dataset)
@@ -301,36 +309,32 @@ def main(args):
                                                                optimizer.param_groups[0]['lr'],
                                                                optimizer.param_groups[1]['lr']))
 
-        if epoch % args.val_freq == 0:
-            train_metrics_dict = evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds,
-                                                    model, criterion, args, train_metrics_dict)
-            val_metrics_dict = evaluate_one_epoch(train_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds,
-                                                  model, criterion, args, val_metrics_dict)
-            plot_metrics(plots_dict_1=train_metrics_dict, val_freq=args.val_freq,
-                         save_dir=args.log_dir + '/eval_metrics_plots',
-                         plots_dict_2=val_metrics_dict, label_1='train', label_2='validation')
-
-        plot_metrics(plots_dict_1=train_loss_dict, val_freq=args.val_freq,
-                     save_dir=args.log_dir + '/train_metrics_plots')
+        with open(os.path.join(args.log_dir, 'train_loss_dict.pkl'), 'wb') as f:
+            pickle.dump(train_loss_dict, f)
+            print(f"{os.path.join(args.log_dir, 'train_loss_dict.pkl')} saved successfully !!")
 
         if dist.get_rank() == 0:
+            if (epoch % args.train_eval_freq == 0) or (epoch == args.val_freq):
+                train_metrics_dict = evaluate_one_epoch(train_eval_loader, DATASET_CONFIG, CONFIG_DICT,
+                                                        args.ap_iou_thresholds, model, criterion, args,
+                                                        train_metrics_dict)
+                with open(os.path.join(args.log_dir, 'train_metrics_dict.pkl'), 'wb') as f:
+                    pickle.dump(train_metrics_dict, f)
+                    print(f"{os.path.join(args.log_dir, 'train_metrics_dict.pkl')} saved successfully !!")
+
+            if epoch % args.val_freq == 0:
+                val_metrics_dict = evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds,
+                                                      model, criterion, args, val_metrics_dict)
+                with open(os.path.join(args.log_dir, 'val_metrics_dict.pkl'), 'wb') as f:
+                    pickle.dump(val_metrics_dict, f)
+                    print(f"{os.path.join(args.log_dir, 'val_metrics_dict.pkl')} saved successfully !!")
+
             # save model
             save_checkpoint(args, epoch, model, optimizer, scheduler)
 
     evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds, model, criterion, args,
                        defaultdict(list))
 
-    with open(os.path.join(args.log_dir, 'train_loss_dict.pkl'), 'wb') as f:
-        pickle.dump(train_loss_dict, f)
-        print(f"{os.path.join(args.log_dir, 'train_loss_dict.pkl')} saved successfully !!")
-
-    with open(os.path.join(args.log_dir, 'val_metrics_dict.pkl'), 'wb') as f:
-        pickle.dump(val_metrics_dict, f)
-        print(f"{os.path.join(args.log_dir, 'val_metrics_dict.pkl')} saved successfully !!")
-
-    with open(os.path.join(args.log_dir, 'train_metrics_dict.pkl'), 'wb') as f:
-        pickle.dump(train_metrics_dict, f)
-        print(f"{os.path.join(args.log_dir, 'train_metrics_dict.pkl')} saved successfully !!")
 
     save_checkpoint(args, 'last', model, optimizer, scheduler, save_cur=True)
     logger.info("Saved in {}".format(os.path.join(args.log_dir, f'ckpt_epoch_last.pth')))
@@ -341,7 +345,8 @@ def train_one_epoch(epoch, train_loader, DATASET_CONFIG, model, criterion, optim
                     train_stat_dict):
     stat_dict = {}  # collect statistics
     model.train()  # set model to training mode
-    for batch_idx, batch_data_label in enumerate(train_loader):
+    for batch_idx, batch_data_label in tqdm(enumerate(train_loader), f"Epoch-{epoch}, Batches-{len(train_loader)}: "
+                                                                     f"Running training step ..."):
         for key in batch_data_label:
             batch_data_label[key] = batch_data_label[key].cuda(non_blocking=True)
         inputs = {'point_clouds': batch_data_label['point_clouds']}
@@ -428,7 +433,8 @@ def evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, AP_IOU_THRESHOL
     batch_pred_map_cls_dict = {k: [] for k in prefixes}
     batch_gt_map_cls_dict = {k: [] for k in prefixes}
 
-    for batch_idx, batch_data_label in enumerate(test_loader):
+    for batch_idx, batch_data_label in tqdm(enumerate(test_loader), f"Batches - {len(test_loader)}: "
+                                                                    f"Running validation steps ..."):
         for key in batch_data_label:
             batch_data_label[key] = batch_data_label[key].cuda(non_blocking=True)
 

@@ -38,7 +38,7 @@ from model_util_sunrgbd import SunrgbdDatasetConfig
 DC = SunrgbdDatasetConfig()  # dataset specific config
 # maximum number of objects allowed per scene, (IMO it shouldn't be greater than the number of bak
 # bone output features/dims)
-MAX_NUM_OBJ = 512
+MAX_NUM_OBJ = 128
 MEAN_COLOR_RGB = np.array([0.5, 0.5, 0.5])  # sunrgbd color is in 0~1
 
 
@@ -47,7 +47,7 @@ class SunrgbdDetectionVotesDataset(Dataset):
                  use_color=False, use_height=False, use_v1=False,
                  augment=False, data_root=None, load_all_data=False):
 
-        assert (num_points <= 150000)
+        assert (num_points <= 500000)
         self.use_v1 = use_v1
 
         self.num_points = num_points

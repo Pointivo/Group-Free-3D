@@ -24,7 +24,7 @@ def parse_option():
     parser.add_argument("--rng_seed", type=int, default=0, help='manual seed')
     parser.add_argument('--dump_dir', default='dump', help='Dump dir to save sample outputs [default: None]')
     parser.add_argument('--use_old_type_nms', action='store_true', help='Use old type of NMS, IoBox2Area.')
-    parser.add_argument('--nms_iou', type=float, default=0.1, help='NMS IoU threshold. [default: 0.25]')
+    parser.add_argument('--nms_iou', type=float, default=0.10, help='NMS IoU threshold. [default: 0.25]')
     parser.add_argument('--conf_thresh', type=float, default=0.1,
                         help='Filter out predictions with obj prob less than it. [default: 0.05]')
     parser.add_argument('--ap_iou_thresholds', type=float, default=[0.25, 0.5], nargs='+',
@@ -35,7 +35,7 @@ def parse_option():
 
     # Model
     parser.add_argument('--width', default=1, type=int, help='backbone width')
-    parser.add_argument('--num_target', type=int, default=512, help='Proposal number [default: 256]')
+    parser.add_argument('--num_target', type=int, default=256, help='Proposal number [default: 256]')
     parser.add_argument('--sampling', default='kps', type=str, help='Query points sampling method (kps, fps)')
 
     # Transformer
@@ -66,7 +66,7 @@ def parse_option():
     # Data
     parser.add_argument('--batch_size', type=int, default=3, help='Batch Size during training [default: 8]')
     parser.add_argument('--dataset', default='scannet', help='Dataset name. sunrgbd or scannet. [default: scannet]')
-    parser.add_argument('--num_point', type=int, default=150000, help='Point Number [default: 50000]')
+    parser.add_argument('--num_point', type=int, default=500000, help='Point Number [default: 50000]')
     parser.add_argument('--data_root', default='data', help='data root path')
     parser.add_argument('--use_height', action='store_true', help='Use height signal in input.')
     parser.add_argument('--use_color', action='store_true', help='Use RGB color in input.')
@@ -341,7 +341,7 @@ def eval(args, avg_times=5):
 
     # Used for AP calculation
     CONFIG_DICT = {'remove_empty_box': True, 'use_3d_nms': True, 'nms_iou': args.nms_iou,
-                   'use_old_type_nms': args.use_old_type_nms, 'cls_nms': True,
+                   'use_old_type_nms': args.use_old_type_nms, 'cls_nms': False,
                    'per_class_proposal': True,
                    'conf_thresh': args.conf_thresh, 'dataset_config': DATASET_CONFIG}
 

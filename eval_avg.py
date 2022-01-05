@@ -3,6 +3,7 @@ import sys
 import time
 import pickle
 import numpy as np
+from tqdm import tqdm
 from datetime import datetime
 import argparse
 import torch
@@ -24,7 +25,7 @@ def parse_option():
     parser.add_argument("--rng_seed", type=int, default=0, help='manual seed')
     parser.add_argument('--dump_dir', default='dump', help='Dump dir to save sample outputs [default: None]')
     parser.add_argument('--use_old_type_nms', action='store_true', help='Use old type of NMS, IoBox2Area.')
-    parser.add_argument('--nms_iou', type=float, default=0.10, help='NMS IoU threshold. [default: 0.25]')
+    parser.add_argument('--nms_iou', type=float, default=0.1, help='NMS IoU threshold. [default: 0.25]')
     parser.add_argument('--conf_thresh', type=float, default=0.1,
                         help='Filter out predictions with obj prob less than it. [default: 0.05]')
     parser.add_argument('--ap_iou_thresholds', type=float, default=[0.25, 0.5], nargs='+',
@@ -64,7 +65,7 @@ def parse_option():
     parser.add_argument('--size_cls_agnostic', action='store_true', help='Use class-agnostic size prediction.')
 
     # Data
-    parser.add_argument('--batch_size', type=int, default=3, help='Batch Size during training [default: 8]')
+    parser.add_argument('--batch_size', type=int, default=4, help='Batch Size during training [default: 8]')
     parser.add_argument('--dataset', default='scannet', help='Dataset name. sunrgbd or scannet. [default: scannet]')
     parser.add_argument('--num_point', type=int, default=500000, help='Point Number [default: 50000]')
     parser.add_argument('--data_root', default='data', help='data root path')
@@ -198,7 +199,7 @@ def evaluate_one_time(test_loader, DATASET_CONFIG, CONFIG_DICT, AP_IOU_THRESHOLD
     batch_pred_map_cls_dict = {k: [] for k in prefixes}
     batch_gt_map_cls_dict = {k: [] for k in prefixes}
 
-    for batch_idx, batch_data_label in enumerate(test_loader):
+    for batch_idx, batch_data_label in tqdm(enumerate(test_loader)):
         for key in batch_data_label:
             batch_data_label[key] = batch_data_label[key].cuda(non_blocking=True)
 
@@ -326,6 +327,7 @@ def evaluate_one_time(test_loader, DATASET_CONFIG, CONFIG_DICT, AP_IOU_THRESHOLD
     return mAPs
 
 
+
 def eval(args, avg_times=5):
     test_loader, DATASET_CONFIG = get_loader(args)
     n_data = len(test_loader.dataset)
@@ -335,9 +337,9 @@ def eval(args, avg_times=5):
     logger.info(str(model))
     save_path = load_checkpoint(args, model)
     model = model.cuda()
-    # if torch.cuda.device_count() > 1:
-    #     logger.info("Let's use %d GPUs!" % (torch.cuda.device_count()))
-    #     model = torch.nn.DataParallel(model)
+    if torch.cuda.device_count() > 1:
+        logger.info("Let's use %d GPUs!" % (torch.cuda.device_count()))
+        model = torch.nn.DataParallel(model)
 
     # Used for AP calculation
     CONFIG_DICT = {'remove_empty_box': True, 'use_3d_nms': True, 'nms_iou': args.nms_iou,
@@ -345,14 +347,13 @@ def eval(args, avg_times=5):
                    'per_class_proposal': True,
                    'conf_thresh': args.conf_thresh, 'dataset_config': DATASET_CONFIG}
 
-    logger.info(str(datetime.now()))
+    np.random.seed(args.rng_seed)
     mAPs_times = [None for i in range(avg_times)]
-    for i in range(avg_times):
-        np.random.seed(i + args.rng_seed)
-        mAPs = evaluate_one_time(test_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds,
-                                 model, criterion, args, i)
-        mAPs_times[i] = mAPs
-        logger.info(f"checkpoint path {save_path}")
+    mAPs = evaluate_one_time(test_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds,
+                      model, criterion, args)
+    mAPs_times[0] = mAPs
+    logger.info(str(datetime.now()))
+
 
     mAPs_avg = mAPs.copy()
 
@@ -383,4 +384,3 @@ if __name__ == '__main__':
     logger = setup_logger(output=opt.dump_dir, name="eval")
 
     eval(opt, opt.avg_times)
-

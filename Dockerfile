@@ -17,6 +17,10 @@ RUN wget --quiet https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86
     conda create -y -n pv python=3.6 && conda activate pv && \
     pip install --upgrade pip && conda install -y -c conda-forge uwsgi"
 
+SHELL ["conda/bin/conda", "run", "-n", "pv", "/bin/bash", "-c"]
+
 RUN git clone --depth 1 --progress https://github.com/Pointivo/Group-Free-3D.git
-RUN /bin/bash -c "cd Group-Free-3D && conda activate pv && pip install requirements.txt"
-RUN /bin/bash -c "sh Group-Free-3D/init.sh"
+#RUN conda/bin/conda init bash
+RUN /bin/bash -c "cd Group-Free-3D && pip install -r requirements.txt"
+RUN /bin/bash -c "cd Group-Free-3D && sh init.sh"
+

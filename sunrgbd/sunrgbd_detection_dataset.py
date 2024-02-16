@@ -38,8 +38,9 @@ from model_util_sunrgbd import SunrgbdDatasetConfig
 DC = SunrgbdDatasetConfig()  # dataset specific config
 # maximum number of objects allowed per scene, (IMO it shouldn't be greater than the number of bak
 # bone output features/dims)
-MAX_NUM_OBJ = 128
-MEAN_COLOR_RGB = np.array([0.5, 0.5, 0.5])  # sunrgbd color is in 0~1
+MAX_NUM_OBJ = 139
+MEAN_COLOR_RGB = np.array([127.5, 127.5, 127.5])  # sunrgbd color is in 0~1
+
 
 
 class SunrgbdDetectionVotesDataset(Dataset):
@@ -116,6 +117,7 @@ class SunrgbdDetectionVotesDataset(Dataset):
             point_cloud = point_cloud[:, 0:3]
         else:
             point_cloud = point_cloud[:, 0:6]
+            # point_cloud[:, 3:] /= 255
             point_cloud[:, 3:] = (point_cloud[:, 3:] - MEAN_COLOR_RGB)
 
         if self.use_height:
@@ -124,14 +126,16 @@ class SunrgbdDetectionVotesDataset(Dataset):
             point_cloud = np.concatenate([point_cloud, np.expand_dims(height, 1)], 1)  # (N,4) or (N,7)
 
         # ------------------------------- DATA AUGMENTATION ------------------------------
-        if self.augment:
-            if np.random.random() > 0.5:
+        if self.augment and np.random.random() > 0.5:
+            # print(f'Augment: {self.augment}')
+            # if np.random.random() > 0.5:
                 # Flipping along the YZ plane
-                point_cloud[:, 0] = -1 * point_cloud[:, 0]
-                bboxes[:, 0] = -1 * bboxes[:, 0]
-                bboxes[:, 6] = np.pi - bboxes[:, 6]
+            point_cloud[:, 0] = -1 * point_cloud[:, 0]
+            bboxes[:, 0] = -1 * bboxes[:, 0]
+            bboxes[:, 6] = np.pi - bboxes[:, 6]
 
-            # Rotation along up-axis/Z-axis
+            # if np.random.random() > 0.5:
+                # Rotation along up-axis/Z-axis
             rot_angle = (np.random.random() * np.pi / 3) - np.pi / 6  # -30 ~ +30 degree
             rot_mat = sunrgbd_utils.rotz(rot_angle)
 
@@ -141,14 +145,21 @@ class SunrgbdDetectionVotesDataset(Dataset):
 
             # Augment RGB color
             if self.use_color:
+                # print(f'Augment: {self.augment} and use_color: {self.use_color}')
                 rgb_color = point_cloud[:, 3:6] + MEAN_COLOR_RGB
+                rgb_color /= 255
+                # if np.random.random() > 0.5:
                 rgb_color *= (1 + 0.4 * np.random.random(3) - 0.2)  # brightness change for each channel
+                # if np.random.random() > 0.5:
                 rgb_color += (0.1 * np.random.random(3) - 0.05)  # color shift for each channel
-                rgb_color += np.expand_dims((0.05 * np.random.random(point_cloud.shape[0]) - 0.025),
-                                            -1)  # jittering on each pixel
+                # if np.random.random() > 0.5:
+                #     rgb_color += np.expand_dims((0.05 * np.random.random(point_cloud.shape[0]) - 0.025),
+                #                             -1)  # jittering on each pixel
                 rgb_color = np.clip(rgb_color, 0, 1)
                 # randomly drop out 30% of the points' colors
-                rgb_color *= np.expand_dims(np.random.random(point_cloud.shape[0]) > 0.3, -1)
+                # if np.random.random() > 0.5:
+                #     rgb_color *= np.expand_dims(np.random.random(point_cloud.shape[0]) > 0.3, -1)
+                point_cloud[:, 3:6] = rgb_color * 255
                 point_cloud[:, 3:6] = rgb_color - MEAN_COLOR_RGB
 
             # Augment point cloud scale: 0.85x-1.15x

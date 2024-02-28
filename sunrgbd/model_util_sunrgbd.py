@@ -15,15 +15,17 @@ sys.path.append(os.path.join(ROOT_DIR, 'utils'))
 
 class SunrgbdDatasetConfig(object):
     def __init__(self):
-        self.num_class = 2
+        self.num_class = 3
         self.num_heading_bin = 24
-        self.num_size_cluster = 2
+        self.num_size_cluster = 3
 
-        self.type2class = {'panel': 0, 'dish': 1}
+        self.type2class = {'panel': 0, 'dish': 1, 'ancillary_equipment': 2}
         self.class2type = {self.type2class[t]: t for t in self.type2class}
-        self.type2onehotclass = {'panel': 0, 'dish': 1}
-        self.type_mean_size = {'panel': np.array([0.285384, 0.295038, 1.925716]),
-                               'dish': np.array([0.7776338, 0.847521, 1.1983821])}
+        self.type2onehotclass = {'panel': 0, 'dish': 1, 'ancillary_equipment': 2}
+        self.type_mean_size = {'panel': np.array([0.190776, 0.378594, 1.858175]),
+                               'dish': np.array([0.513175, 1.037162, 1.025653]),
+                               'ancillary_equipment': np.array([0.184008, 0.322361, 0.434965])
+                               }
         self.mean_size_arr = np.zeros((self.num_size_cluster, 3))
         for i in range(self.num_size_cluster):
             self.mean_size_arr[i, :] = self.type_mean_size[self.class2type[i]]

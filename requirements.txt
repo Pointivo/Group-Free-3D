@@ -6,3 +6,7 @@ networkx==2.2
 termcolor
 opencv-python
 tensorboard
+matplotlib
+tqdm
+scipy
+plyfile

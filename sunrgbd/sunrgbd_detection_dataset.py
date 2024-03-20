@@ -38,8 +38,9 @@ from model_util_sunrgbd import SunrgbdDatasetConfig
 DC = SunrgbdDatasetConfig()  # dataset specific config
 # maximum number of objects allowed per scene, (IMO it shouldn't be greater than the number of bak
 # bone output features/dims)
-MAX_NUM_OBJ = 128
+MAX_NUM_OBJ = 139
 MEAN_COLOR_RGB = np.array([0.5, 0.5, 0.5])  # sunrgbd color is in 0~1
+
 
 
 class SunrgbdDetectionVotesDataset(Dataset):
@@ -116,6 +117,7 @@ class SunrgbdDetectionVotesDataset(Dataset):
             point_cloud = point_cloud[:, 0:3]
         else:
             point_cloud = point_cloud[:, 0:6]
+            point_cloud[:, 3:] /= 255
             point_cloud[:, 3:] = (point_cloud[:, 3:] - MEAN_COLOR_RGB)
 
         if self.use_height:
@@ -131,7 +133,7 @@ class SunrgbdDetectionVotesDataset(Dataset):
                 bboxes[:, 0] = -1 * bboxes[:, 0]
                 bboxes[:, 6] = np.pi - bboxes[:, 6]
 
-            # Rotation along up-axis/Z-axis
+                # Rotation along up-axis/Z-axis
             rot_angle = (np.random.random() * np.pi / 3) - np.pi / 6  # -30 ~ +30 degree
             rot_mat = sunrgbd_utils.rotz(rot_angle)
 

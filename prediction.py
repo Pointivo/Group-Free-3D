@@ -7,6 +7,8 @@ from datetime import datetime
 import argparse
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
 
@@ -73,6 +75,8 @@ def parse_option():
     parser.add_argument('--use_sunrgbd_v2', action='store_true', help='Use SUN RGB-D V2 box labels.')
     parser.add_argument('--load_all_data', action='store_true', help='Loads all the data into memory if True, '
                                                                      'otherwise only loads a single batch data.')
+    parser.add_argument('--dataset_type', default='train')
+
     args, unparsed = parser.parse_known_args()
     return args
 
@@ -88,7 +92,7 @@ def get_loader(args):
         from sunrgbd.model_util_sunrgbd import SunrgbdDatasetConfig
 
         DATASET_CONFIG = SunrgbdDatasetConfig()
-        TEST_DATASET = SunrgbdDetectionVotesDataset('val', num_points=args.num_point,
+        TEST_DATASET = SunrgbdDetectionVotesDataset(args.dataset_type, num_points=args.num_point,
                                                     augment=False,
                                                     use_color=True if args.use_color else False,
                                                     use_height=True if args.use_height else False,
@@ -113,7 +117,7 @@ def get_loader(args):
 
     TEST_DATALOADER = DataLoader(TEST_DATASET, batch_size=args.batch_size * torch.cuda.device_count(),
                                  shuffle=args.shuffle_dataset,
-                                 num_workers=4,
+                                 num_workers=0,
                                  worker_init_fn=my_worker_init_fn)
     return TEST_DATALOADER, DATASET_CONFIG
 
@@ -165,7 +169,7 @@ def load_checkpoint(args, model):
     return save_path
 
 
-def evaluate_one_time(test_loader, DATASET_CONFIG, CONFIG_DICT, AP_IOU_THRESHOLDS, model, criterion, args, time=0):
+def evaluate_one_time(test_loader, DATASET_CONFIG, CONFIG_DICT, AP_IOU_THRESHOLDS, model, criterion, args, times=0):
     stat_dict = {}
     if args.num_decoder_layers > 0:
         if args.dataset == 'sunrgbd':
@@ -195,6 +199,8 @@ def evaluate_one_time(test_loader, DATASET_CONFIG, CONFIG_DICT, AP_IOU_THRESHOLD
     batch_gt_map_cls_dict = {k: [] for k in prefixes}
 
     for batch_idx, batch_data_label in enumerate(test_loader):
+        start_time = time.time()
+        print('time0: ', start_time)
         for key in batch_data_label:
             batch_data_label[key] = batch_data_label[key].cuda(non_blocking=True)
 
@@ -274,13 +280,16 @@ def evaluate_one_time(test_loader, DATASET_CONFIG, CONFIG_DICT, AP_IOU_THRESHOLD
 
             batch_pred_map_cls = parse_predictions(end_points, CONFIG_DICT, prefix,
                                                    size_cls_agnostic=args.size_cls_agnostic)
-            batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT,
-                                                  size_cls_agnostic=args.size_cls_agnostic)
-            batch_pred_map_cls_dict[prefix].extend(batch_pred_map_cls)
-            batch_gt_map_cls_dict[prefix].extend(batch_gt_map_cls)
 
+            # batch_gt_map_cls = parse_groundtruths(end_points, CONFIG_DICT,
+            #                                       size_cls_agnostic=args.size_cls_agnostic)
+            # print(f'time2: {time.time() - cur_time}')
+            batch_pred_map_cls_dict[prefix].extend(batch_pred_map_cls)
+            # batch_gt_map_cls_dict[prefix].extend(batch_gt_map_cls)
+        cur_time = time.time() - start_time
+        print(f'time1: {cur_time}')
         if (batch_idx + 1) % 10 == 0:
-            logger.info(f'T[{time}] Eval: [{batch_idx + 1}/{len(test_loader)}]  ' + ''.join(
+            logger.info(f'T[{times}] Eval: [{batch_idx + 1}/{len(test_loader)}]  ' + ''.join(
                 [f'{key} {stat_dict[key] / (float(batch_idx + 1)):.4f} \t'
                  for key in sorted(stat_dict.keys()) if 'loss' not in key]))
             logger.info(''.join([f'{key} {stat_dict[key] / (float(batch_idx + 1)):.4f} \t'

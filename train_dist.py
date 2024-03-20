@@ -62,6 +62,7 @@ def parse_option():
     parser.add_argument('--data_root', default='data', help='data root path')
     parser.add_argument('--use_height', action='store_true', help='Use height signal in input.')
     parser.add_argument('--use_color', action='store_true', help='Use RGB color in input.')
+    parser.add_argument('--augment', action='store_true', help='Use Data Augmentation in SUN RGB-D dataset.')
     parser.add_argument('--use_sunrgbd_v2', action='store_true', help='Use V2 box labels for SUN RGB-D dataset')
     parser.add_argument('--load_all_data', action='store_true', help='Loads all the data into memory if True, '
                                                                      'otherwise only loads a single batch data.')
@@ -109,6 +110,60 @@ def parse_option():
     return args
 
 
+class EarlyStopping:
+    """Early stops the training if validation loss doesn't improve after a given patience."""
+
+    def __init__(self, patience=7, verbose=False, delta=0, path='checkpoint.pt', trace_func=print):
+        """
+        Args:
+            patience (int): How long to wait after last time validation loss improved.
+                            Default: 7
+            verbose (bool): If True, prints a message for each validation loss improvement.
+                            Default: False
+            delta (float): Minimum change in the monitored quantity to qualify as an improvement.
+                            Default: 0
+            path (str): Path for the checkpoint to be saved to.
+                            Default: 'checkpoint.pt'
+            trace_func (function): trace print function.
+                            Default: print
+        """
+        self.patience = patience
+        self.verbose = verbose
+        self.counter = 0
+        self.best_score = None
+        self.early_stop = False
+        self.val_loss_min = np.Inf
+        self.delta = delta
+        self.path = path
+        self.trace_func = trace_func
+
+    def __call__(self, val_loss, model, args, epoch, optimizer, scheduler):
+
+        score = -val_loss
+
+        if self.best_score is None:
+            self.best_score = score
+            self.save_checkpoint(val_loss, model, epoch, optimizer, scheduler)
+        elif score < self.best_score + self.delta:
+            self.counter += 1
+            self.trace_func(f'EarlyStopping counter: {self.counter} out of {self.patience}')
+            if self.counter >= self.patience:
+                self.early_stop = True
+        else:
+            self.best_score = score
+            self.save_checkpoint(val_loss, model, epoch, optimizer, scheduler)
+            self.counter = 0
+
+    def save_checkpoint(self, val_loss, model, epoch, optimizer, scheduler):
+        """Saves model when validation loss decrease."""
+        logger.info(
+                f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).')
+        if epoch % opt.save_freq:
+            logger.info('==> Saving model...')
+            save_checkpoint(opt, epoch, model, optimizer, scheduler, save_cur=True)
+        self.val_loss_min = val_loss
+
+
 def load_checkpoint(args, model, optimizer, scheduler):
     logger.info("=> loading checkpoint '{}'".format(args.checkpoint_path))
 
@@ -119,6 +174,14 @@ def load_checkpoint(args, model, optimizer, scheduler):
     scheduler.load_state_dict(checkpoint['scheduler'])
 
     logger.info("=> loaded successfully '{}' (epoch {})".format(args.checkpoint_path, checkpoint['epoch']))
+    # # args.start_epoch = int(checkpoint['epoch']) + 1
+    # model.load_state_dict(checkpoint['model'])
+    # optimizer.load_state_dict(checkpoint['optimizer'])
+    # logger.info("=> loaded successfully '{}' (epoch {})".format(args.checkpoint_path, checkpoint['epoch']))
+    # # scheduler.load_state_dict(checkpoint['scheduler'])
+    # scheduler._last_lr = checkpoint['scheduler']['_last_lr']
+    # logger.info(f'=> Modified scheduler')
+    # logger.info(f'=> Printing scheduler: {scheduler.state_dict()}')
 
     del checkpoint
     torch.cuda.empty_cache()
@@ -135,11 +198,7 @@ def save_checkpoint(args, epoch, model, optimizer, scheduler, save_cur=False):
         'epoch': epoch,
     }
 
-    if save_cur:
-        state['save_path'] = os.path.join(args.log_dir, f'ckpt_epoch_{epoch}.pth')
-        torch.save(state, os.path.join(args.log_dir, f'ckpt_epoch_{epoch}.pth'))
-        logger.info("Saved in {}".format(os.path.join(args.log_dir, f'ckpt_epoch_{epoch}.pth')))
-    elif epoch % args.save_freq == 0:
+    if save_cur or not (epoch % args.save_freq):
         state['save_path'] = os.path.join(args.log_dir, f'ckpt_epoch_{epoch}.pth')
         torch.save(state, os.path.join(args.log_dir, f'ckpt_epoch_{epoch}.pth'))
         logger.info("Saved in {}".format(os.path.join(args.log_dir, f'ckpt_epoch_{epoch}.pth')))
@@ -162,7 +221,7 @@ def get_loader(args):
 
         DATASET_CONFIG = SunrgbdDatasetConfig()
         TRAIN_DATASET = SunrgbdDetectionVotesDataset('train', num_points=args.num_point,
-                                                     augment=False,
+                                                     augment=True if args.augment else False,
                                                      use_color=True if args.use_color else False,
                                                      use_height=True if args.use_height else False,
                                                      use_v1=(not args.use_sunrgbd_v2),
@@ -260,7 +319,9 @@ def main(args):
     logger.info(f"length of training dataset: {n_data}")
     n_data = len(test_loader.dataset)
     logger.info(f"length of testing dataset: {n_data}")
-
+    print(f'use_color: {args.use_color}')
+    print(f'augment: {args.augment}')
+    print(f'start_epoch: {args.start_epoch}')
     model, criterion = get_model(args, DATASET_CONFIG)
     if dist.get_rank() == 0:
         logger.info(str(model))
@@ -296,6 +357,7 @@ def main(args):
     val_metrics_dict = defaultdict(list)
     train_metrics_dict = defaultdict(list)
     train_loss_dict = defaultdict(list)
+    early_stopping = EarlyStopping(patience=20, verbose=True)
     for epoch in range(args.start_epoch, args.max_epoch + 1):
         train_loader.sampler.set_epoch(epoch)
 
@@ -315,26 +377,31 @@ def main(args):
 
         if dist.get_rank() == 0:
             if (epoch % args.train_eval_freq == 0) or (epoch == args.val_freq):
-                train_metrics_dict = evaluate_one_epoch(train_eval_loader, DATASET_CONFIG, CONFIG_DICT,
-                                                        args.ap_iou_thresholds, model, criterion, args,
-                                                        train_metrics_dict)
+                train_metrics_dict, _ = evaluate_one_epoch(train_eval_loader, DATASET_CONFIG, CONFIG_DICT,
+                                                           args.ap_iou_thresholds, model, criterion, args,
+                                                           train_metrics_dict)
                 with open(os.path.join(args.log_dir, 'train_metrics_dict.pkl'), 'wb') as f:
                     pickle.dump(train_metrics_dict, f)
                     print(f"{os.path.join(args.log_dir, 'train_metrics_dict.pkl')} saved successfully !!")
 
             if epoch % args.val_freq == 0:
-                val_metrics_dict = evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds,
-                                                      model, criterion, args, val_metrics_dict)
+                val_metrics_dict, valid_loss = evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT,
+                                                                  args.ap_iou_thresholds,
+                                                                  model, criterion, args, val_metrics_dict)
                 with open(os.path.join(args.log_dir, 'val_metrics_dict.pkl'), 'wb') as f:
                     pickle.dump(val_metrics_dict, f)
                     print(f"{os.path.join(args.log_dir, 'val_metrics_dict.pkl')} saved successfully !!")
 
+                early_stopping(valid_loss, model, args, epoch, optimizer, scheduler)
+                logger.info(f"Validation Loss: {valid_loss}")
+                if early_stopping.early_stop:
+                    logger.info("Early stopping")
+                    break
             # save model
             save_checkpoint(args, epoch, model, optimizer, scheduler)
 
     evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, args.ap_iou_thresholds, model, criterion, args,
                        defaultdict(list))
-
 
     save_checkpoint(args, 'last', model, optimizer, scheduler, save_cur=True)
     logger.info("Saved in {}".format(os.path.join(args.log_dir, f'ckpt_epoch_last.pth')))
@@ -420,6 +487,7 @@ def train_one_epoch(epoch, train_loader, DATASET_CONFIG, model, criterion, optim
 def evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, AP_IOU_THRESHOLDS, model, criterion, config,
                        plots_dict):
     stat_dict = {}
+    valid_losses = []
 
     if config.num_decoder_layers > 0:
         prefixes = ['last_', 'proposal_'] + [f'{i}head_' for i in range(config.num_decoder_layers - 1)]
@@ -461,6 +529,8 @@ def evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, AP_IOU_THRESHOL
                                      heading_loss_type=config.heading_loss_type,
                                      heading_delta=config.heading_delta,
                                      size_cls_agnostic=config.size_cls_agnostic)
+
+        valid_losses.append(loss.item())
 
         # Accumulate statistics and print out
         for key in end_points:
@@ -515,7 +585,9 @@ def evaluate_one_epoch(test_loader, DATASET_CONFIG, CONFIG_DICT, AP_IOU_THRESHOL
     for mAP in mAPs:
         logger.info(f'IoU[{mAP[0]}]:\t' + ''.join([f'{key}: {mAP[1][key]:.4f} \t' for key in sorted(mAP[1].keys())]))
 
-    return plots_dict
+    valid_loss = np.average(valid_losses)
+
+    return plots_dict, valid_loss
 
 
 def plot_metrics(plots_dict_1, val_freq, save_dir, plots_dict_2=None, label_1=None, label_2=None):

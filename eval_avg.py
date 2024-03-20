@@ -74,6 +74,8 @@ def parse_option():
     parser.add_argument('--use_sunrgbd_v2', action='store_true', help='Use SUN RGB-D V2 box labels.')
     parser.add_argument('--load_all_data', action='store_true', help='Loads all the data into memory if True, '
                                                                      'otherwise only loads a single batch data.')
+    parser.add_argument('--dataset_type', default='train')
+
     args, unparsed = parser.parse_known_args()
     return args
 
@@ -89,7 +91,7 @@ def get_loader(args):
         from sunrgbd.model_util_sunrgbd import SunrgbdDatasetConfig
 
         DATASET_CONFIG = SunrgbdDatasetConfig()
-        TEST_DATASET = SunrgbdDetectionVotesDataset('val', num_points=args.num_point,
+        TEST_DATASET = SunrgbdDetectionVotesDataset(args.dataset_type, num_points=args.num_point,
                                                     augment=False,
                                                     use_color=True if args.use_color else False,
                                                     use_height=True if args.use_height else False,

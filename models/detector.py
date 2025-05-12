@@ -151,8 +151,7 @@ class GroupFreeDetector(nn.Module):
         """
         end_points = {}
 
-        # end_points = self.backbone_net(inputs['point_clouds'], end_points)
-        end_points = self.backbone_net(inputs, end_points)
+        end_points = self.backbone_net(inputs['point_clouds'], end_points)
 
         # Query Points Generation
         points_xyz = end_points['fp2_xyz']
